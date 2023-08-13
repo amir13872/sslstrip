@@ -5,9 +5,7 @@ Ported from Python v2 to v3 by Jay Townsend (theHarvester, Discover, and DNSreco
 
 Requirements:  
    ```pip3 install -r requirements.txt```  
-
-Run as root to install or run it out of the directory:  
-   ```python3 setup.py install```  
+Install the requirements in a virtualenv
    
 Running:  
    sslstrip can be run from the source base without installation.  

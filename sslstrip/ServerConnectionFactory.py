@@ -1,28 +1,22 @@
-# Copyright (c) 2004-2009 Moxie Marlinspike
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License as
-# published by the Free Software Foundation; either version 3 of the
-# License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-# USA
-#
+"""
+This file is licensed under the GNU General Public License version 3.
+Copyright (c) 2004-2009 Moxie Marlinspike
+"""
 
 import logging
 from twisted.internet.protocol import ClientFactory
 
 
 class ServerConnectionFactory(ClientFactory):
+    """
+    This class is used to create a connection to the server.
+    """
 
     def __init__(self, command, uri, postData, headers, client):
+        """
+        Initialize the ServerConnectionFactory with remote server details,
+        as well as a client reference for proxying requests.
+        """
         self.command = command
         self.uri = uri
         self.postData = postData
@@ -30,15 +24,30 @@ class ServerConnectionFactory(ClientFactory):
         self.client = client
 
     def buildProtocol(self, addr):
-        return self.protocol(self.command, self.uri, self.postData, self.headers, self.client)
+        """
+        Build protocol creates an instance of the protocol to be used for the connection.
+        """
+        return self.protocol(
+            self.command, self.uri, self.postData, self.headers, self.client
+        )
 
     def clientConnectionFailed(self, connector, reason):
+        """
+        This function is called if connection to the server fails.
+        """
         logging.debug("Server connection failed.")
-
         destination = connector.getDestination()
 
+        # Retry connection with SSL if not on port 443
         if destination.port != 443:
             logging.debug("Retrying via SSL")
-            self.client.proxyViaSSL(self.headers['host'], self.command, self.uri, self.postData, self.headers, 443)
+            self.client.proxyViaSSL(
+                self.headers["host"],
+                self.command,
+                self.uri,
+                self.postData,
+                self.headers,
+                443,
+            )
         else:
             self.client.finish()

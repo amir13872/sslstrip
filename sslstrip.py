@@ -24,89 +24,96 @@ USA
 
 """
 
-from twisted.web import http
-from twisted.internet import reactor
+import argparse
+import logging
 
+from twisted.internet import reactor
+from twisted.web import http
+
+from sslstrip.CookieCleaner import CookieCleaner
 from sslstrip.StrippingProxy import StrippingProxy
 from sslstrip.URLMonitor import URLMonitor
-from sslstrip.CookieCleaner import CookieCleaner
-
-import sys, getopt, logging, traceback, string, os
-
-gVersion = "1.0"
 
 
-def usage():
-    print("\nsslstrip " + gVersion + " by Moxie Marlinspike")
-    print("Usage: sslstrip <options>\n")
-    print("Options:")
-    print("-w <filename>, --write=<filename> Specify file to log to (optional).")
-    print("-p , --post                       Log only SSL POSTs. (default)")
-    print("-s , --ssl                        Log all SSL traffic to and from server.")
-    print("-a , --all                        Log all SSL and HTTP traffic to and from server.")
-    print("-l <port>, --listen=<port>        Port to listen on (default 10000).")
-    print("-f , --favicon                    Substitute a lock favicon on secure requests.")
-    print("-k , --killsessions               Kill sessions in progress.")
-    print("-h                                Print this help message.")
-    print("")
+class SSLStripConfig:
+    VERSION = "2.0"
+    DEFAULT_LOGFILE = "sslstrip.log"
+    DEFAULT_LOGLEVEL = logging.WARNING
+    DEFAULT_LISTEN_PORT = 10000
+    DEFAULT_SPOOF_FAVICON = False
+    DEFAULT_KILL_SESSIONS = False
 
 
-def parseOptions(argv):
-    logFile = 'sslstrip.log'
-    logLevel = logging.WARNING
-    listenPort = 10000
-    spoofFavicon = False
-    killSessions = False
-
-    try:
-        opts, args = getopt.getopt(argv, "hw:l:psafk",
-                                   ["help", "write=", "post", "ssl", "all", "listen=",
-                                    "favicon", "killsessions"])
-
-        for opt, arg in opts:
-            if opt in ("-h", "--help"):
-                usage()
-                sys.exit()
-            elif opt in ("-w", "--write"):
-                logFile = arg
-            elif opt in ("-p", "--post"):
-                logLevel = logging.WARNING
-            elif opt in ("-s", "--ssl"):
-                logLevel = logging.INFO
-            elif opt in ("-a", "--all"):
-                logLevel = logging.DEBUG
-            elif opt in ("-l", "--listen"):
-                listenPort = arg
-            elif opt in ("-f", "--favicon"):
-                spoofFavicon = True
-            elif opt in ("-k", "--killsessions"):
-                killSessions = True
-
-        return logFile, logLevel, listenPort, spoofFavicon, killSessions
-
-    except getopt.GetoptError:
-        usage()
-        sys.exit(2)
+def initialize_logger(logFile, logLevel):
+    logging.basicConfig(
+        level=logLevel, format="%(asctime)s %(message)s", filename=logFile, filemode="w"
+    )
 
 
-def main(argv):
-    (logFile, logLevel, listenPort, spoofFavicon, killSessions) = parseOptions(argv)
-
-    logging.basicConfig(level=logLevel, format='%(asctime)s %(message)s',
-                        filename=logFile, filemode='w')
-
+def start_reactor(listenPort, spoofFavicon, killSessions):
     URLMonitor.getInstance().setFaviconSpoofing(spoofFavicon)
-    CookieCleaner.getInstance().setEnabled(killSessions)
-
+    CookieCleaner.getInstance().set_enabled(killSessions)
     strippingFactory = http.HTTPFactory(timeout=10)
     strippingFactory.protocol = StrippingProxy
-
     reactor.listenTCP(int(listenPort), strippingFactory)
-
-    print("\nsslstrip " + gVersion + " by Moxie Marlinspike running...")
-
+    print(f"\nsslstrip {SSLStripConfig.VERSION} by Moxie Marlinspike running...")
     reactor.run()
 
 
-if __name__ == '__main__':
-    main(sys.argv[1:])
+def main():
+    parser = argparse.ArgumentParser(description="sslstrip")
+    parser.add_argument(
+        "-w",
+        "--write",
+        default=SSLStripConfig.DEFAULT_LOGFILE,
+        help="Specify file to log to (optional).",
+    )
+    parser.add_argument(
+        "-p",
+        "--post",
+        default=False,
+        action="store_true",
+        help="Log only SSL POSTs. (default)",
+    )
+    parser.add_argument(
+        "-s",
+        "--ssl",
+        default=False,
+        action="store_true",
+        help="Log all SSL traffic to and from server.",
+    )
+    parser.add_argument(
+        "-a",
+        "--all",
+        default=False,
+        action="store_true",
+        help="Log all SSL and HTTP traffic to and from server.",
+    )
+    parser.add_argument(
+        "-l",
+        "--listen",
+        default=SSLStripConfig.DEFAULT_LISTEN_PORT,
+        help="Port to listen on.",
+    )
+    parser.add_argument(
+        "-f",
+        "--favicon",
+        default=SSLStripConfig.DEFAULT_SPOOF_FAVICON,
+        action="store_true",
+        help="Substitute a lock favicon on secure requests.",
+    )
+    parser.add_argument(
+        "-k",
+        "--killsessions",
+        default=SSLStripConfig.DEFAULT_KILL_SESSIONS,
+        action="store_true",
+        help="Kill sessions in progress.",
+    )
+    args = parser.parse_args()
+
+    initialize_logger(args.write, SSLStripConfig.DEFAULT_LOGLEVEL)
+    start_reactor(args.listen, args.favicon, args.killsessions)
+
+
+if __name__ == "__main__":
+    main()

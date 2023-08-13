@@ -24,16 +24,14 @@ from .URLMonitor import URLMonitor
 
 
 class ServerConnection(HTTPClient):
-    """ The server connection is where we do the bulk of the stripping.  Everything that
-    comes back is examined.  The headers we dont like are removed, and the links are stripped
-    from HTTPS to HTTP.
-    """
+    """The server connection is where we do the bulk of the stripping."""
 
     urlExpression = re.compile(r"(https://[\w\d:#@%/;$()~_?\+-=\\\.&]*)", re.IGNORECASE)
     urlType = re.compile(r"https://", re.IGNORECASE)
-    urlExplicitPort = re.compile(r'https://([a-zA-Z0-9.]+):[0-9]+/', re.IGNORECASE)
+    urlExplicitPort = re.compile(r"https://([a-zA-Z0-9.]+):[0-9]+/", re.IGNORECASE)
 
     def __init__(self, command, uri, postData, headers, client):
+        super().__init__()
         self.command = command
         self.uri = uri
         self.postData = postData
@@ -45,109 +43,104 @@ class ServerConnection(HTTPClient):
         self.contentLength = None
         self.shutdownComplete = False
 
-    def getLogLevel(self):
+    @property
+    def log_level(self):
         return logging.DEBUG
 
-    def getPostPrefix(self):
+    @property
+    def post_prefix(self):
         return "POST"
 
-    def sendRequest(self):
-        logging.log(self.getLogLevel(), "Sending Request: %s %s" % (self.command, self.uri))
+    def send_request(self):
+        logging.log(self.log_level, f"Sending Request: {self.command} {self.uri}")
         self.sendCommand(self.command, self.uri)
 
-    def sendHeaders(self):
+    def send_headers(self):
         for header, value in self.headers.items():
-            logging.log(self.getLogLevel(), "Sending header: %s : %s" % (header, value))
+            logging.log(self.log_level, f"Sending header: {header} : {value}")
             self.sendHeader(header, value)
-
         self.endHeaders()
 
-    def sendPostData(self):
-        logging.warning(self.getPostPrefix() + " Data (" + self.headers['host'] + "):\n" + str(self.postData))
+    def send_post_data(self):
+        logging.warning(
+            f"{self.post_prefix} Data ({self.headers['host']}):\n{str(self.postData)}"
+        )
         self.transport.write(self.postData)
 
-    def connectionMade(self):
-        logging.log(self.getLogLevel(), "HTTP connection made.")
-        self.sendRequest()
-        self.sendHeaders()
+    def connection_made(self):
+        logging.log(self.log_level, "HTTP connection made.")
+        self.send_request()
+        self.send_headers()
+        if self.command == "POST":
+            self.send_post_data()
 
-        if self.command == 'POST':
-            self.sendPostData()
-
-    def handleStatus(self, version, code, message):
-        logging.log(self.getLogLevel(), "Got server response: %s %s %s" % (version, code, message))
+    def handle_status(self, version, code, message):
+        logging.log(self.log_level, f"Got server response: {version} {code} {message}")
         self.client.setResponseCode(int(code), message)
 
-    def handleHeader(self, key, value):
-        logging.log(self.getLogLevel(), "Got server header: %s:%s" % (key, value))
-
-        if key.lower() == 'location':
-            value = self.replaceSecureLinks(value)
-
-        if key.lower() == 'content-type':
-            if value.find('image') != -1:
-                self.isImageRequest = True
-                logging.debug("Response is image content, not scanning...")
-
-        if key.lower() == 'content-encoding':
-            if value.find('gzip') != -1:
-                logging.debug("Response is compressed...")
-                self.isCompressed = True
-        elif key.lower() == 'content-length':
-            self.contentLength = value
-        elif key.lower() == 'set-cookie':
+    def handle_header(self, key, value):
+        logging.log(self.log_level, f"Got server header: {key}:{value}")
+        value = self.replace_secure_links(value) if key.lower() == "location" else value
+        self.set_image_request(value) if key.lower() == "content-type" else value
+        self.set_compressed(value) if key.lower() == "content-encoding" else value
+        self.contentLength = (
+            value if key.lower() == "content-length" else self.contentLength
+        )
+        if key.lower() in ["set-cookie", "content-length"]:
             self.client.responseHeaders.addRawHeader(key, value)
         else:
             self.client.setHeader(key, value)
 
-    def handleEndHeaders(self):
-        if self.isImageRequest and self.contentLength != None:
+    def set_image_request(self, value):
+        if "image" in value:
+            self.isImageRequest = True
+            logging.debug("Response is image content, not scanning...")
+
+    def set_compressed(self, value):
+        if "gzip" in value:
+            logging.debug("Response is compressed...")
+            self.isCompressed = True
+
+    def handle_end_headers(self):
+        if self.isImageRequest and self.contentLength is not None:
             self.client.setHeader("Content-Length", self.contentLength)
-
-        if self.length == 0:
+        if not self.length:
             self.shutdown()
 
-    def handleResponsePart(self, data):
-        if self.isImageRequest:
-            self.client.write(data)
-        else:
-            HTTPClient.handleResponsePart(self, data)
+    def handle_response_part(self, data):
+        self.client.write(data) if self.isImageRequest else super().handleResponsePart(
+            data
+        )
 
-    def handleResponseEnd(self):
-        if self.isImageRequest:
-            self.shutdown()
-        else:
-            HTTPClient.handleResponseEnd(self)
+    def handle_response_end(self):
+        self.shutdown() if self.isImageRequest else super().handleResponseEnd()
 
-    def handleResponse(self, data):
+    def handle_response(self, data):
         if self.isCompressed:
             logging.debug("Decompressing content...")
-            data = gzip.GzipFile('', 'rb', 9, StringIO.StringIO(data)).read()
+            data = gzip.GzipFile("", "rb", 9, StringIO(data)).read()
 
-        logging.log(self.getLogLevel(), "Read from server:\n" + data)
+        logging.log(self.log_level, f"Read from server:\n{data}")
 
-        data = self.replaceSecureLinks(data)
+        data = self.replace_secure_links(data)
 
-        if self.contentLength != None:
-            self.client.setHeader('Content-Length', len(data))
+        if self.contentLength is not None:
+            self.client.setHeader("Content-Length", len(data))
 
         self.client.write(data)
         self.shutdown()
 
-    def replaceSecureLinks(self, data):
-        iterator = re.finditer(ServerConnection.urlExpression, data)
+    def replace_secure_links(self, data):
+        iterator = re.finditer(self.urlExpression, data)
 
         for match in iterator:
             url = match.group()
-
-            logging.debug("Found secure reference: " + url)
-
-            url = url.replace('https://', 'http://', 1)
-            url = url.replace('&amp;', '&')
+            logging.debug(f"Found secure reference: {url}")
+            url = url.replace("https://", "http://", 1).replace("&amp;", "&")
             self.urlMonitor.addSecureLink(self.client.getClientIP(), url)
 
-        data = re.sub(ServerConnection.urlExplicitPort, r'http://\1/', data)
-        return re.sub(ServerConnection.urlType, 'http://', data)
+        data = self.urlExplicitPort.sub(r"http://\1/", data)
+        return self.urlType.sub("http://", data)
 
     def shutdown(self):
         if not self.shutdownComplete:

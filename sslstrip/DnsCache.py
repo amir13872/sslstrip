@@ -17,10 +17,9 @@ class DnsCache:
 
         return None
 
+    @staticmethod
     def getInstance():
         if DnsCache._instance is None:
             DnsCache._instance = DnsCache()
 
         return DnsCache._instance
-
-    getInstance = staticmethod(getInstance)

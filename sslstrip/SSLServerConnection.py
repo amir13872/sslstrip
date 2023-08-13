@@ -28,81 +28,91 @@ class SSLServerConnection(ServerConnection):
     via SSL as well.  We also want to slip our favicon in here and kill the secure bit on cookies.
     """
 
-    cookieExpression = re.compile(r"([ \w\d:#@%/;$()~_?\+-=\\\.&]+); ?Secure", re.IGNORECASE)
+    cookieExpression = re.compile(
+        r"([ \w\d:#@%/;$()~_?\+-=\\\.&]+); ?Secure", re.IGNORECASE
+    )
     cssExpression = re.compile(r"url\(([\w\d:#@%/;$~_?\+-=\\\.&]+)\)", re.IGNORECASE)
-    iconExpression = re.compile(r"<link rel=\"shortcut icon\" .*href=\"([\w\d:#@%/;$()~_?\+-=\\\.&]+)\".*>",
-                                re.IGNORECASE)
+    iconExpression = re.compile(
+        r"<link rel=\"shortcut icon\" .*href=\"([\w\d:#@%/;$()~_?\+-=\\\.&]+)\".*>",
+        re.IGNORECASE,
+    )
     linkExpression = re.compile(
-        r"<((a)|(link)|(img)|(script)|(frame)) .*((href)|(src))=\"([\w\d:#@%/;$()~_?\+-=\\\.&]+)\".*>", re.IGNORECASE)
+        r"<((a)|(link)|(img)|(script)|(frame)) .*((href)|(src))=\"([\w\d:#@%/;$()~_?\+-=\\\.&]+)\".*>",
+        re.IGNORECASE,
+    )
     headExpression = re.compile(r"<head>", re.IGNORECASE)
 
     def __init__(self, command, uri, postData, headers, client):
-        ServerConnection.__init__(self, command, uri, postData, headers, client)
+        super().__init__(command, uri, postData, headers, client)
 
-    def getLogLevel(self):
+    @property
+    def log_level(self):
         return logging.INFO
 
-    def getPostPrefix(self):
+    @property
+    def post_prefix(self):
         return "SECURE POST"
 
-    def handleHeader(self, key, value):
-        if key.lower() == 'set-cookie':
-            value = SSLServerConnection.cookieExpression.sub("\g<1>", value)
+    def handle_header(self, key, value):
+        if key.lower() == "set-cookie":
+            value = self.cookieExpression.sub("\g<1>", value)
+        super().handleHeader(key, value)
 
-        ServerConnection.handleHeader(self, key, value)
+    @staticmethod
+    def strip_file_from_path(path):
+        stripped_path, _, _ = path.rpartition("/")
+        return stripped_path
 
-    def stripFileFromPath(self, path):
-        (strippedPath, lastSlash, file) = path.rpartition('/')
-        return strippedPath
+    def build_absolute_link(self, link):
+        absolute_link = ""
+        if not link.startswith(("http", "/")):
+            absolute_link = "http://{}{}/{}".format(
+                self.headers["host"], self.strip_file_from_path(self.uri), link
+            )
 
-    def buildAbsoluteLink(self, link):
-        absoluteLink = ""
+            logging.debug("Found path-relative link in secure transmission: %s", link)
+            logging.debug("New Absolute path-relative link: %s", absolute_link)
+        elif not link.startswith("http"):
+            absolute_link = "http://{}{}".format(self.headers["host"], link)
 
-        if (not link.startswith('http')) and (not link.startswith('/')):
-            absoluteLink = "http://" + self.headers['host'] + self.stripFileFromPath(self.uri) + '/' + link
+            logging.debug("New Absolute link: %s", absolute_link)
 
-            logging.debug("Found path-relative link in secure transmission: " + link)
-            logging.debug("New Absolute path-relative link: " + absoluteLink)
-        elif not link.startswith('http'):
-            absoluteLink = "http://" + self.headers['host'] + link
+        if absolute_link:
+            absolute_link = absolute_link.replace("&amp;", "&")
+            self.urlMonitor.addSecureLink(self.client.getClientIP(), absolute_link)
 
-            logging.debug("Found relative link in secure transmission: " + link)
-            logging.debug("New Absolute link: " + absoluteLink)
-
-        if not absoluteLink == "":
-            absoluteLink = absoluteLink.replace('&amp;', '&')
-            self.urlMonitor.addSecureLink(self.client.getClientIP(), absoluteLink);
-
-    def replaceCssLinks(self, data):
-        iterator = re.finditer(SSLServerConnection.cssExpression, data)
+    def replace_links_with_patterns(self, data, pattern, group_num):
+        iterator = re.finditer(pattern, data)
 
         for match in iterator:
-            self.buildAbsoluteLink(match.group(1))
+            self.build_absolute_link(match.group(group_num))
 
         return data
 
-    def replaceFavicon(self, data):
-        match = re.search(SSLServerConnection.iconExpression, data)
-
-        if match != None:
-            data = re.sub(SSLServerConnection.iconExpression,
-                          "<link rel=\"SHORTCUT ICON\" href=\"/favicon-x-favicon-x.ico\">", data)
+    def replace_favicon(self, data):
+        match = re.search(self.iconExpression, data)
+        if match:
+            data = re.sub(
+                self.iconExpression,
+                '<link rel="SHORTCUT ICON" href="/favicon-x-favicon-x.ico">',
+                data,
+            )
         else:
-            data = re.sub(SSLServerConnection.headExpression,
-                          "<head><link rel=\"SHORTCUT ICON\" href=\"/favicon-x-favicon-x.ico\">", data)
+            data = re.sub(
+                self.headExpression,
+                '<head><link rel="SHORTCUT ICON" href="/favicon-x-favicon-x.ico">',
+                data,
+            )
 
         return data
 
-    def replaceSecureLinks(self, data):
-        data = ServerConnection.replaceSecureLinks(self, data)
-        data = self.replaceCssLinks(data)
+    def replace_secure_links(self, data):
+        data = super().replace_secure_links(data)
+        data = self.replace_links_with_patterns(data, self.cssExpression, 1)
 
         if self.urlMonitor.isFaviconSpoofing():
-            data = self.replaceFavicon(data)
+            data = self.replace_favicon(data)
 
-        iterator = re.finditer(SSLServerConnection.linkExpression, data)
-
-        for match in iterator:
-            self.buildAbsoluteLink(match.group(10))
+        data = self.replace_links_with_patterns(data, self.linkExpression, 10)
 
         return data
