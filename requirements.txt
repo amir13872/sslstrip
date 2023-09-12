@@ -1,5 +1,5 @@
 setuptools==68.1.2
-Twisted==22.10.0
+Twisted==23.8.0
 pyopenssl==23.2.0
 cryptography==41.0.3
 service_identity==23.1.0
