@@ -17,6 +17,7 @@
 #
 
 from twisted.web.http import HTTPChannel
+
 from sslstrip.ClientRequest import ClientRequest
 
 
